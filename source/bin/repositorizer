@@ -1,0 +1,269 @@
+#!/bin/bash
+
+
+# repositorizer
+# Version: 1.6.1
+# Author: monon
+
+
+## Script output format variables
+SCRIPT_NAME=$(basename $0)
+[[ -e ${HOME}/.bash_colors ]] && source ${HOME}/.bash_colors
+WARNING="${BOLD}Warning! ${ITALIC}"
+
+CREATE_DISTRIBUTION_FILE=""
+
+## Global Variables for "reprepro"
+ORIGEN_REPOSITORY=""
+PACKAGE_SOURCE=""
+
+
+REPOSITORY_PATH="/var/www/html/ubuntu"
+SERVER_HOSTNAME='backery'
+USUARIO="monon"
+SYNC_ORIGEN="$(xdg-user-dir DOCUMENTS)/Archivo/Software/Repos/"
+SYNC_DESTINO="${USUARIO}@${SERVER_HOSTNAME}.local:${HOME}/backup/Documentos/Archivo/Software/Repos/"
+
+DISTRIBUTIONS_TEXT=$(cat <<EOF
+
+Origin: (domain.org)
+Label: (Description label)
+Suite: (codename)
+Version: (numeral version XX.XX)
+Codename: (codename)
+Architectures: (amd64 i386 etc)
+Components: (main non-free etc)
+Description: (Full description)
+SignWith: (Last eight digit of key XXXXXXXX)
+
+EOF
+)
+
+
+function remove_packages()
+{
+    local codename=${1}
+    local arch="amd64"
+    local package_list=$(reprepro -A ${arch} --list-format  '${package} ' list ${codename})
+    local package_from_repo
+    
+    echo -e "Eliminando paquetes no referenciados en:"
+    echo -e "    ${PACKAGE_SOURCE}/${codename}\n"
+    for package in ${package_list}  ; do # Itera la lista de "Nombres" de paquetes
+        PKG_DEB=$( reprepro -A ${arch} --list-format '${package}_${version}_${architecture}.deb\n' \
+                listmatched ${codename} "${package}" | sed -e "s/[0-9]://" ) 
+        
+        if [[ ! -e "${PACKAGE_SOURCE}/${codename}/${PKG_DEB}" ]] ; then 
+            echo -e "${RED_L}Eliminando...${NORMAL}"
+            echo -e "${RED_L}    ${PACKAGE_SOURCE}/${codename}/${PKG_DEB}${NORMAL}"
+            reprepro remove ${codename} ${package} > /dev/null
+        else
+            echo -e "    ${PKG_DEB}"
+        fi
+    done
+    echo
+    echo
+}
+
+function add_packages()
+{
+    local codename=${1}
+
+    echo -e "Añadiendo paquetes para ${BOLD}\"${codename}\"${NORMAL} desde:"
+    echo -e "    ${PACKAGE_SOURCE}/${codename}\n"
+    for DEB in ${PACKAGE_SOURCE}/${codename}/*.deb ; do 
+        DEB=$(echo ${DEB} | sed -e "s/[0-9]://")
+        ## Si no funciona añadir  --ask-passphrase
+        local command_output=$(reprepro -V -A amd64 --ask-passphrase \
+            -b . includedeb ${codename} ${DEB}  2> /dev/null \
+            || reprepro -V -A amd64 -S utils -P optional --ask-passphrase \
+            -b . includedeb ${codename} ${DEB} 2> /dev/null)
+
+        if [[ $(echo -e "${command_output}") =~ Created ]]; then
+            echo -e "${GREEN}Añadiendo...${NORMAL}"
+            echo -e "    ${GREEN}$(basename ${DEB})${NORMAL}"
+        else 
+            echo -e "    $(basename ${DEB})"
+        fi
+
+    done
+    echo
+    echo
+}
+
+
+function update_origen()
+{
+    local input_read
+    local suitables="${suitables} $(cat ./conf/distributions | sed -e \
+                            '/Codename/!d' -e 's/\(Codename: \)\(.*\)/\2/g')"
+    for codename in ${suitables} ; do
+        if [[ ! -d "${PACKAGE_SOURCE}" ]] ; then
+            echo -e "${WARNING}El origen de los paquetes\n${PACKAGE_SOURCE}"
+            echo -e "no existe"
+        elif [[ ! -d "${PACKAGE_SOURCE}/${codename}" ]] ; then
+            echo -ne "${RED_L}${SCRIPT_NAME}${NORMAL}: "
+            echo -e "No existe el origen de los paquetes"
+            echo -e "    ${PACKAGE_SOURCE}/${codename}"
+
+        else
+            echo
+            echo -e "${BOLD}${GREEN}${SCRIPT_NAME}${WHITE}: Actualizando repositorio para \"${codename}\"${NORMAL}\n"
+            
+            echo -ne "${GREEN}${SCRIPT_NAME}${NORMAL}: "
+            echo -e "Quieres actualizar el repositorio? [y/N]:"
+            input_read=''
+            read -sn1 input_read
+            echo
+            if [[ "${input_read}" =~ ^[YySs]$ ]] ; then
+                # Ejecuta la funcion de eliminar paquetes
+                remove_packages ${codename}
+                # Ejecuta la funcion de inclusion de paquetes
+                add_packages ${codename}
+            else
+                echo -e "${GREEN}${SCRIPT_NAME}${NORMAL}: Exiting"
+                exit 0
+            fi
+
+        fi
+    done
+}
+
+
+function create_distributions_file()
+{
+    local file=${1}
+    if [[ ! -f ./conf/${file} ]]; then
+        echo -e "${GREEN}${SCRIPT_NAME}${NORMAL}: Creando archivo"
+        echo -e "    ./conf/distributions"
+        touch ./conf/${file}
+        OLD_IFS=$IFS
+        IFS=$'\n'
+        for ln in ${DISTRIBUTIONS_TEXT}; do
+            echo -e $ln >> ./conf/${file}
+        done
+        IFS=$OLD_IFS
+    else
+        echo -e "${RED_L}${SCRIPT_NAME}${NORMAL}: Ya existe"
+        echo -e "    ./conf/distributions"
+    fi
+    
+    echo -ne "    Quieres editar ${BOLD}./conf/${file}${NORMAL}? [y/N]:"
+    input_read=''
+    read -sn1 input_read
+    echo
+    if [[ "${input_read}" =~ ^[YySs]$ ]] ; then
+        nano ./conf/${file}
+    else
+        echo -e "${GREEN}${SCRIPT_NAME}${NORMAL}: Exiting"
+        exit 0
+    fi
+    
+
+}
+
+
+function help_message()
+{
+    echo -e "repositorizer /path/origen"
+    ( cat <<EOF
+Description: ${SCRIPT_NAME} builds a .deb package from sources.
+
+Usage:
+  ${SCRIPT_NAME} -h
+  ${SCRIPT_NAME}   [-s <SOURCE_PACKAGES>] [-c] <REPOSITORY_ORIGEN>
+  
+  Options:
+    -h  Shows this message.
+    -s  <SOURCE_PACKAGES> Set source packages.
+  
+  <SOURCE_PACKAGES>
+    Directory that contains a folder for each "codename" with
+    all packages we want to add to the repository.
+  
+  <REPOSITORY_ORIGEN> (mandatory)
+    Directory where "reprepro" will create an origen repository
+    It must content  afolder called "conf" with at least
+    a "distributions" file with the next format:
+${DISTRIBUTIONS_TEXT}
+EOF
+)
+}
+
+
+
+OPTIONS=$(getopt  -o "hcp:r:" -n "${SCRIPT_NAME}" -- "$@")
+
+if [ $? != 0 ] ; then
+  exit 1 ;
+fi
+
+eval set -- "$OPTIONS"
+
+while true ; do 
+    case $1 in 
+            -h)
+                help_message
+                shift
+                exit 0
+                ;;
+            -p)
+                shift
+                echo
+                if [[ -n ${1} ]] ; then
+                    PACKAGE_SOURCE="$(realpath ${1})"
+                    shift
+                    echo -ne "${GREEN}${SCRIPT_NAME}${NORMAL}: "
+                    echo -e "Fuente de los paquetes"
+                    echo -e "    ${PACKAGE_SOURCE}"
+                else
+                    echo -ne "${RED_L}${SCRIPT_NAME}${NORMAL}: "
+                    echo -e "Fuente de los paquetes sin definir"
+                    echo
+                    exit 1
+                fi
+                ;;
+            -c)
+                shift
+                CREATE_DISTRIBUTION_FILE="y"
+                ;;
+            --)
+                shift
+                echo
+                if [[ -n ${1} ]] && [[ -d ${1} ]]; then
+                    ORIGEN_REPOSITORY="$(realpath ${1})"
+                    shift
+                    echo -ne "${GREEN}${SCRIPT_NAME}${NORMAL}: "
+                    echo -e "Repositorio origen (Working directory)"
+                    echo -e "    ${ORIGEN_REPOSITORY}"
+                    if [[ ! -e ${ORIGEN_REPOSITORY}/conf/distributions ]] ; then
+                        echo -ne "${RED_L}${SCRIPT_NAME}${NORMAL}: "
+                        echo -e "El archivo ${BOLD}distributions${NORMAL} no existe"
+                        echo
+                        exit 1
+                    fi
+                else
+                    echo -ne "${RED_L}${SCRIPT_NAME}${NORMAL}: "
+                    echo -e "Repositorio origen no definido"
+                    echo
+                    exit 1 
+                fi
+                
+                [[ -n ${ORIGEN_REPOSITORY} ]] && cd ${ORIGEN_REPOSITORY}
+                if [[ -n ${CREATE_DISTRIBUTION_FILE} ]]; then
+                    create_distributions_file distributions
+                fi
+                
+                [[ -n ${PACKAGE_SOURCE} ]] && update_origen
+                #set_repository
+                break
+                ;;
+            *)
+                shift
+                exit 1
+                ;;
+    esac
+done
+
+exit 0
+
