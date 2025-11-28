@@ -9,7 +9,11 @@
 ## Script output format variables
 SCRIPT_NAME=$(basename $0)
 [[ -e ${HOME}/.bash_colors ]] && source ${HOME}/.bash_colors
-WARNING="${BOLD}${RED}Warning!${NORMAL}"
+BD=${BOLD}
+NL=${NORMAL}
+RD=${RED}
+GN=${GREEN}
+WARNING="${BD}${RD}Warning!${NL}:"
 
 ## Global Variables for "reprepro"
 REMOTE_USER=""
@@ -19,7 +23,9 @@ REMOTE_DESTINATION=""
 DEST_REPO="" ## Carpeta destino del repositorio
 ORIG_PACKAGES="" ## Carpeta origen de los paquetes
 MOUNTPOINT="/tmp/${USER}/repositorizer_"
-LAST_OPTS_SAVED="/.config/repositorizerrc"
+OPTS_SAVED_FILE="/.config/repositorizerrc"
+MAX_SAVED=5
+
 
 OPT_REMOTE=""
 OPT_ORIGEN=""
@@ -40,7 +46,7 @@ SignWith: (Last eight digit of key XXXXXXXX)
 EOF
 )
 
-
+## Valida 
 function validate_remote()
 {
     local user
@@ -57,15 +63,16 @@ function validate_remote()
         REMOTE_USER="${user}"
         REMOTE_HOST="${host}"
         REMOTE_PORT="${port}"
-        echo -e "${BOLD}Host remoto${NORMAL}"
+        echo -e "${BD}Host remoto${NL}"
         echo -e "    ${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PORT}"
-        return 0
     else
-        echo -ne "${WARNING}: "
-        echo -e "El host remoto ${BOLD}${1}${NORMAL} està mal formado"
+        echo -ne "${WARNING} "
+        echo -e "El host remoto ${BD}${1}${NL} està mal formado"
+        echo -e "    Formato: ${BD}user@host.domain:[port]${NL}"
         echo
         exit 1
     fi
+    return 0
 }
 
 
@@ -73,29 +80,30 @@ function validate_origen_packages()
 {
     echo
     if [[ -z ${1} ]] ; then
-        echo -ne "${WARNING}: "
+        echo -ne "${WARNING} "
         echo -e "Directorio origen de los paquetes no esta definido"
         echo
         exit 1
      elif [[ ! -d ${1} ]]; then
-        echo -ne "${WARNING}: "
+        echo -ne "${WARNING} "
         echo -e "El origen de paquetes no es un directorio"
         echo
         exit 1
      else
         ORIG_PACKAGES="$(realpath ${1})"
-        echo -e "${BOLD}Origen de paquetes${NORMAL}"
+        echo -e "${BD}Origen de paquetes${NL}"
         echo -e "    ${ORIG_PACKAGES}"
-        return 0
     fi
+    return 0
 }
 
 
 function validate_destination_repositori()
 {
+    local input_read
     echo
     if [[ -z ${1} ]] ; then  ## If $1 is empty!
-        echo -ne "${WARNING}: "
+        echo -ne "${WARNING} "
         echo -e "Directorio de destino no definido!"
         echo
         exit 1
@@ -105,20 +113,19 @@ function validate_destination_repositori()
         [[ $? -eq 0 ]] || exit 1
         ## If $DEST_REPO and /conf directories do not exist!
         if [[ ! -e ${DEST_REPO} ]] ; then
-            echo -ne "${WARNING}: El directorio "
-            echo -e "${BOLD}${DEST_REPO}${NORMAL} no existe."
-            echo -ne "${GREEN}${SCRIPT_NAME}${NORMAL}: "
+            echo -ne "${WARNING} El directorio "
+            echo -e "${BD}${DEST_REPO}${NL} no existe."
+            echo -ne "${GN}${SCRIPT_NAME}${NL}: "
             echo -e "Quieres crearlo? [y/N]:"
-            input_read=''
             read -sn1 input_read
-            echo
+            #echo
             if [[ "${input_read}" =~ ^[YySs]$ ]] ; then
-                echo -e "${GREEN}${SCRIPT_NAME}${NORMAL}: Creando directorio"
+                echo -e "${GN}${SCRIPT_NAME}${NL}: Creando directorio"
                 echo -e "    ${DEST_REPO}/conf"
                 echo
                 mkdir -p ${DEST_REPO}/conf || exit 1
             else
-                echo -e "${GREEN}${SCRIPT_NAME}${NORMAL}: Exiting"
+                echo -e "${GN}${SCRIPT_NAME}${NL}: Exiting"
                 echo
                 exit 0
             fi
@@ -126,31 +133,24 @@ function validate_destination_repositori()
         
         ## If $DEST_REPO exists but it is no a directory
         if [[ ! -d ${DEST_REPO} ]]; then
-            echo -ne "${WARNING}: "
+            echo -ne "${WARNING} "
             echo -e "El destino debe ser un directorio!"
             echo
             exit 1
         else
-            #echo -ne "${GREEN}${SCRIPT_NAME}${NORMAL}: "
-            echo -e "${BOLD}Repositorio destino${NORMAL} (Working directory)"
-            if [[ -n ${REMOTE_USER} && -n ${REMOTE_HOST} ]]; then
-                echo -e "    La ruta ${BOLD}${REMOTE_DESTINATION}${NORMAL}"
-                echo -ne "    del host ${BOLD}${REMOTE_HOST}${NORMAL} "
-                echo -e "se montara: "
-            fi
+            #echo -ne "${GN}${SCRIPT_NAME}${NL}: "
+            echo -e "${BD}Repositorio destino${NL} (Working directory)"
             echo -e "    ${DEST_REPO}"
             echo
-            
             if [[ ! -n ${ORIG_PACKAGES} ]] && [[ ! -d ${ORIG_PACKAGES} ]]; then
-                echo -ne "${WARNING}: "
+                echo -ne "${WARNING} "
                 echo -ne "Directorio origen de los paquetes es incorrecto "
                 echo
-                exit 1
-            else
-                return 0
+                exit 1 
             fi
         fi
     fi
+    return 0
 }
 
 
@@ -161,15 +161,15 @@ function remove_packages()
     local package_list=$(reprepro -A ${arch} --list-format  '${package} ' list ${codename})
     local package_from_repo
     
-    echo -e "${BOLD}Eliminando${NORMAL} paquetes no referenciados en:"
+    echo -e "${BD}Eliminando${NL} paquetes no referenciados en:"
     echo -e "    ${ORIG_PACKAGES}/${codename}\n"
     for package in ${package_list}  ; do # Itera la lista de "Nombres" de paquetes
         PKG_DEB=$( reprepro -A ${arch} --list-format '${package}_${version}_${architecture}.deb\n' \
                 listmatched ${codename} "${package}" | sed -e "s/[0-9]://" ) 
         
         if [[ ! -e "${ORIG_PACKAGES}/${codename}/${PKG_DEB}" ]] ; then 
-            echo -e "${BOLD}${RED}Eliminando del repositorio...${NORMAL}"
-            echo -e "${BOLD}${RED}    ...${PKG_DEB}${NORMAL}"
+            echo -e "${BD}${RD}Eliminando del repositorio...${NL}"
+            echo -e "${BD}${RD}    ...${PKG_DEB}${NL}"
             reprepro remove ${codename} ${package} > /dev/null
         else
             echo -e "    ${PKG_DEB}"
@@ -183,20 +183,19 @@ function remove_packages()
 function add_packages()
 {
     local codename=${1}
-
-    echo -e "${BOLD}Añadiendo${NORMAL} paquetes para ${BOLD}\"${codename}\"${NORMAL} desde:"
+    local command_output
+    echo -e "${BD}Añadiendo${NL} paquetes para ${BD}\"${codename}\"${NL} desde:"
     echo -e "    ${ORIG_PACKAGES}/${codename}\n"
     for DEB in ${ORIG_PACKAGES}/${codename}/*.deb ; do 
         DEB=$(echo ${DEB} | sed -e "s/[0-9]://")
         ## Si no funciona añadir  --ask-passphrase
-        local command_output=$(reprepro -V -A amd64 --ask-passphrase \
+        command_output=$(reprepro -V -A amd64 --ask-passphrase \
             -b . includedeb ${codename} ${DEB}  2> /dev/null \
             || reprepro -V -A amd64 -S utils -P optional --ask-passphrase \
             -b . includedeb ${codename} ${DEB} 2> /dev/null)
-
         if [[ $(echo -e "${command_output}") =~ Created ]]; then
-            echo -e "${GREEN}Añadiendo...${NORMAL}"
-            echo -e "    ${GREEN}$(basename ${DEB})${NORMAL}"
+            echo -e "${GN}Añadiendo...${NL}"
+            echo -e "    ${GN}$(basename ${DEB})${NL}"
         else 
             echo -e "    $(basename ${DEB})"
         fi
@@ -216,8 +215,8 @@ function update_repository()
     [[ $PWD = $DEST_REPO ]] && create_distributions_file "distributions"
     
     if [[ ! -e ${PWD}/conf/distributions ]] ; then
-        echo -ne "${WARNING}: "
-        echo -e "El archivo ${BOLD}distributions${NORMAL} no existe"
+        echo -ne "${WARNING} "
+        echo -e "El archivo ${BD}distributions${NL} no existe"
         echo
         exit 1
     else
@@ -229,30 +228,30 @@ function update_repository()
         for codename in ${suitables[@]} ; do
             echo $codename
             if [[ ! -d "${ORIG_PACKAGES}" ]] ; then
-                echo -e "${WARNING}El origen de los paquetes\n${ORIG_PACKAGES}"
-                echo -e "no existe"
+                echo -e "${WARNING} No existe el directorio origen"
+                echo -e "    ${ORIG_PACKAGES}"
+                exit 1
             elif [[ ! -d "${ORIG_PACKAGES}/${codename}" ]] ; then
-                echo -ne "${WARNING}: "
-                echo -e "No existe el origen de los paquetes"
+                echo -ne "${WARNING} "
+                echo -e "No existe el directorio con la version de paquetes"
                 echo -e "    ${ORIG_PACKAGES}/${codename}"
                 echo
+                exit 1
             else
                 echo
-                #echo -ne "${BOLD}${GREEN}${SCRIPT_NAME}${WHITE}: "
-                echo -e "${BOLD}Actualizando repositorio para \"${codename}\"${NORMAL}"
-                echo -ne "${GREEN}${SCRIPT_NAME}${NORMAL}: "
+                #echo -ne "${BD}${GN}${SCRIPT_NAME}${WHITE}: "
+                echo -e "${BD}Actualizando repositorio para \"${codename}\"${NL}"
+                echo -ne "${GN}${SCRIPT_NAME}${NL}: "
                 echo -e "Quieres actualizar el repositorio? [y/N]:"
-                input_read=''
                 read -sn1 input_read
-                echo
+                #echo
                 if [[ "${input_read}" =~ ^[YySs]$ ]] ; then
                     # Ejecuta la funcion de eliminar paquetes
                     remove_packages ${codename}
                     # Ejecuta la funcion de inclusion de paquetes
                     add_packages ${codename}
                 else
-                    echo -e "${GREEN}${SCRIPT_NAME}${NORMAL}: Exiting"
-                    exit 0
+                    echo -e "${GN}${SCRIPT_NAME}${NL}: Exiting"
                 fi
             fi
         done
@@ -262,6 +261,7 @@ function update_repository()
         echo
         exit 1
     fi
+    return 0
 }
 
 
@@ -275,8 +275,8 @@ function create_mountpoint()
 
 function error_mounting_remote()
 {
-    echo -ne "${WARNING}${NORMAL} "
-    echo -e "No se ha podido montar el host ${BOLD}${REMOTE_HOST}${NORMAL}"
+    echo -ne "${WARNING} "
+    echo -e "No se ha podido montar el host ${BD}${REMOTE_HOST}${NL}"
     exit 0
 }
 
@@ -286,29 +286,57 @@ function mount_remote()
     local stat
     create_mountpoint
     mountpoint ${MOUNTPOINT}${REMOTE_HOST} > /dev/null
-    stat=$?
-    if [[ ${stat} -ne 0 && -d ${MOUNTPOINT}${REMOTE_HOST} ]] ; then
-        echo -e "${GREEN}${SCRIPT_NAME}${NORMAL}: Montando el host" 
+    stat="$?"
+    echo -e "${BD}Repostorio remoto"
+    echo -e "    ${BD}${REMOTE_DESTINATION}${NL} en ${BD}${REMOTE_HOST}${NL}:${REMOTE_PORT}"
+    if [[ "${stat}" != "0" && -d ${MOUNTPOINT}${REMOTE_HOST} ]] ; then
+        echo -e "    ${BD}Montando en:${NL} ${MOUNTPOINT}${REMOTE_HOST}"
         sshfs ${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_DESTINATION} \
             ${MOUNTPOINT}${REMOTE_HOST} -o port=${REMOTE_PORT} \
-            && return 0 || error_mounting_remote
+            || error_mounting_remote
     fi
+    mountpoint ${MOUNTPOINT}${REMOTE_HOST} > /dev/null
+    stat="$?"
+    if [[ "${stat}" = "0" && -d ${MOUNTPOINT}${REMOTE_HOST} ]] ; then
+        echo -e "    ${GN}${BD}Accesible en:${NL} ${MOUNTPOINT}${REMOTE_HOST}"
+    fi
+    echo
+    return 0
 }
+
+
+function umount_remote()
+{
+    local mounted=$(ls -d -1 ${MOUNTPOINT}*)
+    mountpoint "$mounted" > /dev/null
+    stat="$?"
+    if [[ "${stat}" = "0" ]] ; then
+        echo -e "${BD}Repostorio remoto"
+        echo -e "    ${BD}${RD}${BD}Desmontando:${NL} ${mounted}"
+        umount "${mounted}" &&  rm "${mounted}"
+    fi
+    echo
+    echo -e "${GN}${SCRIPT_NAME}${NL}: Exiting"
+    echo
+    return 0 
+}
+
 
 
 function create_distributions_file()
 {
     local file=${1}
     local select="y/N"
+    local input_read
     if [[ ! -d  ${PWD}/conf ]]; then
-        echo -e "Creando directorio ${BOLD}${PWD}/conf${NORMAL} "
+        echo -e "Creando directorio ${BD}${PWD}/conf${NL} "
         mkdir -p ${PWD}/conf
     fi
     
     if [[ ! -f ${PWD}/conf/${file} ]]; then
         touch ${PWD}/conf/${file}
         select="Y/n"
-        echo -e "Creando archivo ${BOLD}${PWD}/conf/${file}${NORMAL}"
+        echo -e "Creando archivo ${BD}${PWD}/conf/${file}${NL}"
         sleep 0.2
         OLD_IFS=$IFS
         IFS=$'\n'
@@ -317,12 +345,11 @@ function create_distributions_file()
         done
         IFS=$OLD_IFS
     else
-        echo -e "El archivo ${BOLD}${file}${NORMAL} existe."
+        echo -e "El archivo ${BD}${file}${NL} existe."
     fi
-    echo -ne "${GREEN}${SCRIPT_NAME}${NORMAL}: Quieres editar ${BOLD}./conf/${file}${NORMAL}? ${select}:"
-    input_read=''
+    echo -ne "${GN}${SCRIPT_NAME}${NL}: Quieres editar ${BD}./conf/${file}${NL}? ${select}:"
     read -sn1 input_read
-    echo
+    #echo
     if [[ "${input_read}" =~ ^[YySs]$ && "$select" = "y/N" ]] || [[ ! "${input_read}" =~ ^[Nn]$ && "$select" = "Y/n" ]] ; then
         nano ./conf/${file}
     fi
@@ -331,8 +358,15 @@ function create_distributions_file()
 
 function save_lats_options()
 {
-    echo -e "${LAST_OPTIONS}" >> "${HOME}${LAST_OPTS_SAVED}"
-    [[ $(cat "${HOME}${LAST_OPTS_SAVED}" | wc -l) -gt 5 ]] && sed -i "1d"  "${HOME}${LAST_OPTS_SAVED}"
+    echo -e "${LAST_OPTIONS}" >> "${HOME}${OPTS_SAVED_FILE}"
+    sed -i "/^ *$/d"  "${HOME}${OPTS_SAVED_FILE}"  ##  Elimina lineas vacias
+    cat "${HOME}${OPTS_SAVED_FILE}" | sort | uniq > "/tmp/repositoricerrc.tmp"
+    [[ -f "/tmp/repositoricerrc.tmp" ]] \
+            && cp "/tmp/repositoricerrc.tmp" "${HOME}${OPTS_SAVED_FILE}" \
+            && rm "/tmp/repositoricerrc.tmp"
+
+    #sed -i '$!N; /^\(.*\)\n\1$/!P; D' "${HOME}${OPTS_SAVED_FILE}" ##  Elimina lineas duplicadas contiguas
+    [[ $(cat "${HOME}${OPTS_SAVED_FILE}" | wc -l) -gt ${MAX_SAVED} ]] && sed -i -e "1d"  "${HOME}${OPTS_SAVED_FILE}"  
 }
 
 
@@ -340,21 +374,20 @@ function get_last_options()
 {
     local input_read
     local n=0
-    echo -e "${BOLD}Ultimas argumentos y opciones usados:${NORMAL}"
-    cat "${HOME}${LAST_OPTS_SAVED}" | while read -r line ; do
+    echo -e "${BD}Ultimas argumentos y opciones usados:${NL}"
+    cat "${HOME}${OPTS_SAVED_FILE}" | while read -r line ; do
         n=$(($n + 1))
         echo "$n)  $line"
     done
     echo -e "*)  Ninguna"
-    echo -ne "${GREEN}${SCRIPT_NAME}${NORMAL}: Selecciona una opcion:"
-    input_read=''
+    echo -ne "${GN}${SCRIPT_NAME}${NL}: Selecciona una opcion:"
     read -sn1 input_read
-    echo
+    #echo
     if [[ ${input_read} =~ ^[1-5] ]] ; then
-        OPTIONS=$(sed "${input_read}q;d" "${HOME}${LAST_OPTS_SAVED}")
+        OPTIONS=$(sed "${input_read}q;d" "${HOME}${OPTS_SAVED_FILE}")
     else
         echo
-        echo -e "${GREEN}${SCRIPT_NAME}${NORMAL}: Exiting"
+        echo -e "${GN}${SCRIPT_NAME}${NL}: Exiting"
         echo
         exit 0
     fi
@@ -374,6 +407,7 @@ Usage:
   Options:
     -h  Shows this message.
     -s  <SOURCE_PACKAGES> Set source packages.
+    -l  Shows for choice the last 5 sets of passed arguments
   
   <SOURCE_PACKAGES>
     Directory that contains a folder for each "codename" with
@@ -389,13 +423,11 @@ EOF
 }
 
 
-OPTIONS=$(getopt  -o "hlp:r:" -n "${SCRIPT_NAME}" -- "$@")
+OPTIONS=$(getopt  -o "hlup:r:" -n "${SCRIPT_NAME}" -- "$@")
 
-if [ $? != 0 ] ; then
-  exit 1 ;
-fi
+[ $? != 0 ] && exit 1 
 
-LAST_OPTIONS=${OPTIONS}
+#LAST_OPTIONS=${OPTIONS}
 
 eval set -- "$OPTIONS"
 
@@ -416,42 +448,50 @@ while true ; do
                 ;;
             -p)
                 ## Packages origen argumennt
+                OPT_P="${1}"
                 shift
                 if [[ ! ${1} =~ ^-. ]] && [[ ${1} =~ ^[a-zA-Z0-9/]+ ]]; then
                     OPT_ORIGEN="${1}"
+                    OPT_P="${OPT_P} '${1}'"
                     shift
                 fi
                 ;;
             -r)
-                ## Remote argument
+                ##  Argument for remote repository
+                OPT_R="${1}"
                 shift
                 if [[ ! ${1} =~ ^-. ]] && [[ ${1} =~ ^[a-zA-Z0-9/]+ ]]; then
                     OPT_REMOTE=${1}
+                    OPT_R="${OPT_R} '${1}'"
                     shift
                 fi
+                ;;
+            -u)
+                shift
+                OPT_UMOUNT="y"
                 ;;
             --)
                 shift
                 
+                [[ ${OPT_UMOUNT} ]] && umount_remote && break
+                
                 [[ -n ${OPT_REMOTE} ]] && validate_remote ${OPT_REMOTE}
-                validate_origen_packages ${OPT_ORIGEN}
-                [[ -n ${1} ]] && OPT_DESTINATION=${1} 
+                
+                validate_origen_packages ${OPT_ORIGEN} && 
+                [[ -n ${1} ]] && OPT_DESTINATION=${1}
                 shift
                 
                 if [[ -n ${REMOTE_HOST} ]]; then
                     REMOTE_DESTINATION=${OPT_DESTINATION}
                     create_mountpoint
                     validate_destination_repositori ${MOUNTPOINT}${REMOTE_HOST}
-                    mount_remote \
-                        && (echo -e "Host ${BOLD}${REMOTE_HOST}${NORMAL} montado con sshfs en"
-                        echo -e "    ${MOUNTPOINT}${REMOTE_HOST}"
-                        echo)
+                    mount_remote
                 else
                     validate_destination_repositori ${OPT_DESTINATION}
                 fi
+                LAST_OPTIONS="${OPT_P} ${OPT_R} -- '${OPT_DESTINATION}'"
                 
-                [[  ${SAVELAST} = "" ]] && save_lats_options
-                update_repository
+                update_repository && [[ ${SAVELAST} = "" ]] && save_lats_options
                 break
                 ;;
             *)
