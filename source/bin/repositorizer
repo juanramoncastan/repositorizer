@@ -88,7 +88,7 @@ function validate_remote()
         REMOTE_USER="${user}"
         REMOTE_HOST="${host}"
         REMOTE_PORT="${port}"
-        mssg "${BD}Host remoto${NL}\n\
+        mssg "${GN}${SCRIPT_NAME}${NL}Host remoto\n\
               ${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PORT}"
     else
         mssg_error "El host remoto ${BD}${1}${NL} està mal formado\n\
@@ -133,7 +133,7 @@ function validate_origen_packages()
         exit 1
      else
         ORIG_PACKAGES="$(realpath ${1})"
-        mssg "${BD}Origen de paquetes${NL}\n\
+        mssg "${GN}${SCRIPT_NAME}${NL}: Origen de paquetes\n\
               ${ORIG_PACKAGES}"
     fi
     echo
@@ -145,7 +145,7 @@ function validate_destination_repositori()
 {
     local input_read
     
-    mssg "${BD}Repositorio destino${NL} (Working directory)"
+    mssg "${GN}${SCRIPT_NAME}${NL}: Repositorio destino (Working directory)"
     if [[ -n ${1} ]] ; then
         
         if [[ ! -d ${1} ]] ; then 
@@ -157,7 +157,7 @@ function validate_destination_repositori()
 
         if [[ ! -e ${DEST_REPO} ]] ; then
             mssg_error "El directorio ${BD}${DEST_REPO}${NL} no existe."
-            mssg_ask "${GN}${SCRIPT_NAME}${NL}: Crear directorio? [y/N]:"
+            mssg_ask "Crear directorio? ${BD}[y/N]${NL}:"
             read -sn1 input_read && echo
             if [[ "${input_read}" =~ ^[YySs]$ ]] ; then
                 mssg "${GN}${SCRIPT_NAME}${NL}: Creando directorio"
@@ -190,16 +190,19 @@ function remove_packages()
 {
     local codename=${1}
     local arch="amd64"
+    reprepro -A ${arch} --list-format  '${package} ' list ${codename} 1> /dev/null
+    if [[ ! ${?} -eq 0 ]] ; then
+        mssg_error "Es posible que haya errores de formato en el archivo ${BD}distributions${NL}"
+        exit 1
+    fi
     local package_list=$(reprepro -A ${arch} --list-format  '${package} ' list ${codename})
     local package_from_repo
-    
-    mssg "${BD}Eliminando${NL} paquetes no referenciados en:\n \
-          ${ORIG_PACKAGES}/${codename}\n"
-    echo
+     
+    mssg "Eliminando paquetes no referenciados en: ${ORIG_PACKAGES}/${codename}\n"
     mssg "Checking..."
     for package in ${package_list}  ; do # Itera la lista de "Nombres" de paquetes
-        PKG_DEB=$( reprepro -A ${arch} --list-format '${package}_${version}_${architecture}.deb\n' \
-                listmatched ${codename} "${package}" | sed -e "s/[0-9]://" ) 
+        PKG_DEB=$(reprepro -A ${arch} --list-format '${package}_${version}_${architecture}.deb\n' \
+                listmatched ${codename} "${package}" 2> /dev/null | sed -e "s/[0-9]://")
         
         if [[ ! -e "${ORIG_PACKAGES}/${codename}/${PKG_DEB}" ]] ; then 
             mssg "${BD}${RD}Eliminando del repositorio...${NL}\n\
@@ -209,7 +212,6 @@ function remove_packages()
             mssg "    ${PKG_DEB}"
         fi
     done
-    echo
     return 0
 }
 
@@ -219,9 +221,7 @@ function add_packages()
     local codename=${1}
     local command_output
     
-    mssg "${BD}Añadiendo${NL} paquetes para ${BD}\"${codename}\"${NL} desde:\n\
-             ${ORIG_PACKAGES}/${codename}\n"
-    echo
+    mssg "Añadiendo paquetes para ${BD}\"${codename}\"${NL} desde: ${ORIG_PACKAGES}/${codename}\n"
     mssg "Checking..."
     for DEB in ${ORIG_PACKAGES}/${codename}/*.deb ; do 
         DEB=$(echo ${DEB} | sed -e "s/[0-9]://")
@@ -230,6 +230,11 @@ function add_packages()
             -b . includedeb ${codename} ${DEB}  2> /dev/null \
             || reprepro -V -A amd64 -S utils -P optional --ask-passphrase \
             -b . includedeb ${codename} ${DEB} 2> /dev/null)
+        if [[ ! $? -eq 0 ]] ; then
+            mssg_error "Es posible que haya errores en el archivo distributions\n\
+                                    o  con algun paquete"
+            exit 1
+        fi
         if [[ $(echo -e "${command_output}") =~ Created ]]; then
             mssg "${GN}Añadiendo...${NL}
                   ${GN}$(basename ${DEB})${NL}"
@@ -237,7 +242,6 @@ function add_packages()
             mssg "    $(basename ${DEB})"
         fi
     done
-    echo
     return 0
 }
 
@@ -273,13 +277,12 @@ function update_repository()
                 echo
                 exit 1
             else
-                mssg "${BD}Actualizando repositorio${NL} para ${BD}\"${codename}\"${NL}"
-                mssg_ask "${GN}${SCRIPT_NAME}${NL}: Quieres actualizar el repositorio? [y/N]:"
+                mssg "${GN}${SCRIPT_NAME}${NL}: Actualizando repositorio para ${BD}\"${codename}\"${NL}"
+                mssg_ask "Quieres actualizar el repositorio? ${BD}[y/N]${NL}:"
                 read -sn1 input_read && echo
                 if [[ "${input_read}" =~ ^[YySs]$ ]] ; then
-                    # Ejecuta la funcion de eliminar paquetes
                     remove_packages ${codename}
-                    # Ejecuta la funcion de inclusion de paquetes
+                    echo
                     add_packages ${codename}
                 else
                     echo
@@ -302,7 +305,7 @@ function create_mountpoint()
     local remote
     
     remote=$(findmnt -t fuse.sshfs | grep "${MOUNTPOINT}" | cut -d " " -f 2)
-    mssg "${BD}Creando punto de montaje${NL}"
+    mssg "${GN}${SCRIPT_NAME}${NL}: Creando punto de montaje"
     if [[ ! -d ${MOUNTPOINT}${REMOTE_HOST} ]] ; then
         mkdir -p ${MOUNTPOINT}${REMOTE_HOST} \
                 && mssg "    ${GN}Creando:${NL}${MOUNTPOINT}${REMOTE_HOST}" \
@@ -364,7 +367,7 @@ function umount_remote()
     if [[ -n "${mounted}" ]] ; then
         if [[ "${stat}" = "0" ]] ; then
             remote=$(findmnt -t fuse.sshfs | grep "${MOUNTPOINT}" | cut -d " " -f 2)
-            mssg "${BD}Repostorio remoto${NL}\n\
+            mssg "${GN}${SCRIPT_NAME}${NL}: Repostorio remoto\n\
                   Desmontando: ${remote}\n\
                   de ${mounted}"
                   
@@ -392,10 +395,10 @@ function edit_distributions_file()
     local input_read=""
     local file=${1}
     
-    mssg "${BD}Editar archivo${NL}\n"
+    mssg "${GN}${SCRIPT_NAME}${NL}: Editar archivo"
     if [[ ! -e ./conf/${file} ]] ; then
         mssg_error "El archivo ${BD}${DEST_REPO}/conf/${file}${NL} no existe."
-        mssg_ask "${GN}${SCRIPT_NAME}${NL}: Quieres crearlo? [y/N]:"
+        mssg_ask "Quieres crearlo? ${BD}[y/N]${NL}:"
         read -sn1 input_read && echo
         if [[ "${input_read}" =~ ^[YySs]$ ]] ; then
             mkdir -p ${DEST_REPO}/conf \
@@ -414,7 +417,7 @@ function edit_distributions_file()
             exit 0
         fi
     fi
-    mssg_ask "${GN}${SCRIPT_NAME}${NL}: Quieres editar ${BD}${file}${NL}? [y/N]:"
+    mssg_ask "Quieres editar ${BD}${file}${NL}? ${BD}[y/N]${NL}:"
     read -sn1 input_read && echo
     if [[ "${input_read}" =~ ^[YySs]$ ]]  ; then
         nano ./conf/${file}
@@ -426,10 +429,13 @@ function edit_distributions_file()
 
 function save_lats_options()
 {
-    mssg "${BD}Guardado opciones y argumentos${NL}\n\
+    mssg "${GN}${SCRIPT_NAME}${NL}: Guardado opciones y argumentos\n\
           ${LAST_OPTIONS}"
-    echo -e "${LAST_OPTIONS}" >> "${HOME}${OPTS_SAVED_FILE}"
     sed -i "/^ *$/d"  "${HOME}${OPTS_SAVED_FILE}"  ##  Elimina lineas vacias
+    sed -i -e '$i\' "${HOME}${OPTS_SAVED_FILE}"
+    sed -i -e '$i\'"${LAST_OPTIONS}" "${HOME}${OPTS_SAVED_FILE}"
+    #echo -e "${LAST_OPTIONS}" >> "${HOME}${OPTS_SAVED_FILE}"
+    
     cat "${HOME}${OPTS_SAVED_FILE}" | sort | uniq > "/tmp/repositoricerrc.tmp"
     [[ -f "/tmp/repositoricerrc.tmp" ]] \
             && cp "/tmp/repositoricerrc.tmp" "${HOME}${OPTS_SAVED_FILE}" \
@@ -447,7 +453,7 @@ function get_last_options()
     local input_read
     local n=0
     
-    mssg "${BD}Ultimas opciones y argumentos usados:${NL}"
+    mssg "${GN}${SCRIPT_NAME}${NL}: Ultimas opciones y argumentos usados"
     cat "${HOME}${OPTS_SAVED_FILE}" | while read -r line ; do
         n=$(($n + 1))
         mssg " ${BD}${n})${NL} $line"
@@ -579,7 +585,8 @@ while true ; do
                         mssg_error "Es necesaria una ruta del host remoto." && exit 0
                     fi
                 else
-                    validate_destination_repositori ${OPT_DESTINATION}
+                    validate_destination_repositori ${OPT_DESTINATION} \
+                    && OPT_DESTINATION=$(realpath ${OPT_DESTINATION})
                 fi \
                 && LAST_OPTIONS="${OPT_P} ${OPT_R} ${OPT_I} -- '${OPT_DESTINATION}'" \
                 && update_repository \
