@@ -24,7 +24,7 @@ DEST_REPO="" ## Carpeta destino del repositorio
 ORIG_PACKAGES="" ## Carpeta origen de los paquetes
 MOUNTPOINT="/tmp/${USER}/repositorizer_"
 OPTS_SAVED_FILE="/.config/repositorizerrc"
-MAX_SAVED=5
+MAX_SAVED=8
 
 
 OPT_REMOTE=""
@@ -79,10 +79,10 @@ function validate_remote()
     local host
     local port
 
-    pattern="^[[[:alnum:]_]+@[[:alnum:]_]+\.[[:alnum:]_]+[0-9:]*$"
+    pattern="^[[[:alnum:]_-]+@[[:alnum:]_-]+\.[[:alnum:]_-]+[0-9:]*$"
     if [[ ! ${1} =~ ^-. ]] && [[ ${1} =~ ${pattern}$ ]]; then
-        user=$(echo ${1} | sed -e "s|\(^[[:alnum:]_]\+\)@.\+$|\1|")
-        host=$(echo ${1} | sed -e "s|^.\+@\([[:alnum:]_]\+\.[[:alnum:]_]\+\)[:][[:digit:]]*|\1|")
+        user=$(echo ${1} | sed -e "s|\(^[[:alnum:]_-]\+\)@.\+$|\1|")
+        host=$(echo ${1} | sed -e "s|^.\+@\([[:alnum:]_-]\+\.[[:alnum:]_-]\+\)[:][[:digit:]]*|\1|")
         port=$(echo ${1} | sed -e "/.\+:.\+/!d" -e "s|^.\+:\([[:digit:]]*$\)|\1|g")
         [[ -z $port ]] && port="22"
         REMOTE_USER="${user}"
@@ -112,7 +112,7 @@ function validate_identity()
         echo
         exit 1
      else
-        IDENTITY="$(realpath ${1})"
+        IDENTITY="${1}"
         mssg "${BD}Clave ssh${NL}\n\
               ${IDENTITY}"
     fi
@@ -132,7 +132,7 @@ function validate_origen_packages()
         echo
         exit 1
      else
-        ORIG_PACKAGES="$(realpath ${1})"
+        ORIG_PACKAGES="${1}"
         mssg "${GN}${SCRIPT_NAME}${NL}: Origen de paquetes\n\
               ${ORIG_PACKAGES}"
     fi
@@ -151,7 +151,7 @@ function validate_destination_repositori()
         if [[ ! -d ${1} ]] ; then 
             mssg_error "Es necesario una ruta al repositorio de destino."
         fi
-        DEST_REPO="$(realpath ${1})"
+        DEST_REPO="${1}"
 
         [[ $? -eq 0 ]] || exit 1
 
@@ -533,8 +533,8 @@ while true ; do
                 OPT_P="${1}"
                 shift&& 
                 if [[ ! ${1} =~ ^-. ]] && [[ ${1} =~ ^[a-zA-Z0-9/]+ ]]; then
-                    OPT_ORIGEN="${1}"
-                    OPT_P="${OPT_P} '${1}'"
+                    OPT_ORIGEN="$(realpath ${1})"
+                    OPT_P="${OPT_P} '${OPT_ORIGEN}'"
                     shift
                 fi
                 ;;
@@ -543,8 +543,8 @@ while true ; do
                 OPT_R="${1}"
                 shift
                 if [[ ! ${1} =~ ^-. ]] && [[ ${1} =~ ^[a-zA-Z0-9/]+ ]]; then
-                    OPT_REMOTE=${1}
-                    OPT_R="${OPT_R} '${1}'"
+                    OPT_REMOTE="${1}"
+                    OPT_R="${OPT_R} '${OPT_REMOTE}'"
                     shift
                 fi
                 ;;
@@ -552,8 +552,8 @@ while true ; do
                 OPT_I="${1}"
                 shift
                 if [[ ! ${1} =~ ^-. ]] ; then
-                    OPT_IDENTITY=${1}
-                    OPT_I="${OPT_I} '${1}'"
+                    OPT_IDENTITY="${1}"
+                    OPT_I="${OPT_I} '${OPT_IDENTITY}'"
                     shift
                 fi
                 ;;
@@ -572,11 +572,11 @@ while true ; do
                 
                 validate_origen_packages ${OPT_ORIGEN}
                 
-                OPT_DESTINATION=${1}
+                OPT_DESTINATION="$( echo ${1} | sed "s|\(^.\+\)[/]$|\1|")"
                 shift
                 
                 if [[ -n ${REMOTE_HOST} ]]; then
-                    REMOTE_DESTINATION=${OPT_DESTINATION}
+                    REMOTE_DESTINATION=$(echo ${OPT_DESTINATION})
                     if [[ ${REMOTE_DESTINATION} ]] ; then
                         create_mountpoint
                         validate_destination_repositori ${MOUNTPOINT}${REMOTE_HOST}
@@ -585,8 +585,9 @@ while true ; do
                         mssg_error "Es necesaria una ruta del host remoto." && exit 0
                     fi
                 else
-                    validate_destination_repositori ${OPT_DESTINATION} \
-                    && OPT_DESTINATION=$(realpath ${OPT_DESTINATION})
+                    OPT_DESTINATION="$(realpath "${OPT_DESTINATION}")"
+                    validate_destination_repositori "${OPT_DESTINATION}"
+
                 fi \
                 && LAST_OPTIONS="${OPT_P} ${OPT_R} ${OPT_I} -- '${OPT_DESTINATION}'" \
                 && update_repository \
