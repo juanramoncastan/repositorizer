@@ -2,7 +2,7 @@
 
 
 # repositorizer
-# Version: 2.0
+# Version: 2.1
 # Author: monon
 
 
@@ -46,54 +46,97 @@ SignWith: (Last eight digit of key XXXXXXXX)
 EOF
 )
 
-## Valida 
+function mssg_exit()
+{
+    echo -e "${BD}Saliendo!${NL}"
+}
+
+
+function mssg_error()
+{
+    local message=$(echo -e ${1} | sed -e "s|^ \+\(.\+\)|          \1|")
+    echo -e "${WARNING} ${message}"
+}
+
+
+function mssg()
+{
+    local message=$(echo -e "${1}" | sed -e "s|^ \+\(.\+\)$|    \1|")
+    echo -e "$message"
+}
+
+
+function mssg_ask()
+{
+    local message=$(echo -e "${1}" | sed -e "s|^ \+\(.\+\)$|    \1|")
+    echo -ne "$message"
+}
+
+
 function validate_remote()
 {
     local user
     local host
     local port
 
-    echo
-    pattern="^[[[:alnum:]_]+@[[:alnum:]_]+\.[[:alnum:]_]+:[0-9]*$"
+    pattern="^[[[:alnum:]_]+@[[:alnum:]_]+\.[[:alnum:]_]+[0-9:]*$"
     if [[ ! ${1} =~ ^-. ]] && [[ ${1} =~ ${pattern}$ ]]; then
-        user=$(echo ${1} | sed -e "s|\(^[[:alnum:]_]\+\)@.*|\1|")
-        host=$(echo ${1} | sed -e "s|^.\+@\([[:alnum:]_]\+\.[[:alnum:]_]\+\):.*|\1|")
-        port=$(echo ${1} | sed -e  "s|^.\+:\([[:digit:]]\+$\)|\1|g")
+        user=$(echo ${1} | sed -e "s|\(^[[:alnum:]_]\+\)@.\+$|\1|")
+        host=$(echo ${1} | sed -e "s|^.\+@\([[:alnum:]_]\+\.[[:alnum:]_]\+\)[:][[:digit:]]*|\1|")
+        port=$(echo ${1} | sed -e "/.\+:.\+/!d" -e "s|^.\+:\([[:digit:]]*$\)|\1|g")
         [[ -z $port ]] && port="22"
         REMOTE_USER="${user}"
         REMOTE_HOST="${host}"
         REMOTE_PORT="${port}"
-        echo -e "${BD}Host remoto${NL}"
-        echo -e "    ${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PORT}"
+        mssg "${BD}Host remoto${NL}\n\
+              ${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PORT}"
     else
-        echo -ne "${WARNING} "
-        echo -e "El host remoto ${BD}${1}${NL} està mal formado"
-        echo -e "    Formato: ${BD}user@host.domain:[port]${NL}"
+        mssg_error "El host remoto ${BD}${1}${NL} està mal formado\n\
+                    Formato: ${BD}user@host.domain:[port]${NL}"
         echo
         exit 1
     fi
+    echo
+    return 0
+}
+
+
+function validate_identity()
+{
+    if [[ -z ${1} ]] ; then
+        mssg_error "El archivo clave ssh no esta definido"
+        echo
+        exit 1
+     elif [[ ! -e ${1} ]]; then
+        mssg_error "La clave ssh no es valida"
+        echo
+        exit 1
+     else
+        IDENTITY="$(realpath ${1})"
+        mssg "${BD}Clave ssh${NL}\n\
+              ${IDENTITY}"
+    fi
+    echo
     return 0
 }
 
 
 function validate_origen_packages()
 {
-    echo
     if [[ -z ${1} ]] ; then
-        echo -ne "${WARNING} "
-        echo -e "Directorio origen de los paquetes no esta definido"
+        mssg_error "Directorio origen de los paquetes no esta definido"
         echo
         exit 1
      elif [[ ! -d ${1} ]]; then
-        echo -ne "${WARNING} "
-        echo -e "El origen de paquetes no es un directorio"
+        mssg_error "El origen de paquetes no es un directorio"
         echo
         exit 1
      else
         ORIG_PACKAGES="$(realpath ${1})"
-        echo -e "${BD}Origen de paquetes${NL}"
-        echo -e "    ${ORIG_PACKAGES}"
+        mssg "${BD}Origen de paquetes${NL}\n\
+              ${ORIG_PACKAGES}"
     fi
+    echo
     return 0
 }
 
@@ -101,55 +144,44 @@ function validate_origen_packages()
 function validate_destination_repositori()
 {
     local input_read
-    echo
-    if [[ -z ${1} ]] ; then  ## If $1 is empty!
-        echo -ne "${WARNING} "
-        echo -e "Directorio de destino no definido!"
-        echo
-        exit 1
-    else  ## If $1 is not empty
-        ## Repositorio destino arguenento (obligatorio sin especificar option option)
+    
+    mssg "${BD}Repositorio destino${NL} (Working directory)"
+    if [[ -n ${1} ]] ; then
+        
+        if [[ ! -d ${1} ]] ; then 
+            mssg_error "Es necesario una ruta al repositorio de destino."
+        fi
         DEST_REPO="$(realpath ${1})"
+
         [[ $? -eq 0 ]] || exit 1
-        ## If $DEST_REPO and /conf directories do not exist!
+
         if [[ ! -e ${DEST_REPO} ]] ; then
-            echo -ne "${WARNING} El directorio "
-            echo -e "${BD}${DEST_REPO}${NL} no existe."
-            echo -ne "${GN}${SCRIPT_NAME}${NL}: "
-            echo -e "Quieres crearlo? [y/N]:"
-            read -sn1 input_read
-            #echo
+            mssg_error "El directorio ${BD}${DEST_REPO}${NL} no existe."
+            mssg_ask "${GN}${SCRIPT_NAME}${NL}: Crear directorio? [y/N]:"
+            read -sn1 input_read && echo
             if [[ "${input_read}" =~ ^[YySs]$ ]] ; then
-                echo -e "${GN}${SCRIPT_NAME}${NL}: Creando directorio"
-                echo -e "    ${DEST_REPO}/conf"
-                echo
-                mkdir -p ${DEST_REPO}/conf || exit 1
+                mssg "${GN}${SCRIPT_NAME}${NL}: Creando directorio"
+                mkdir -p ${DEST_REPO} || exit 1
             else
-                echo -e "${GN}${SCRIPT_NAME}${NL}: Exiting"
-                echo
+                mssg_exit
                 exit 0
             fi
         fi
-        
-        ## If $DEST_REPO exists but it is no a directory
+
         if [[ ! -d ${DEST_REPO} ]]; then
-            echo -ne "${WARNING} "
-            echo -e "El destino debe ser un directorio!"
+            mssg_error "El destino debe ser un directorio!"
             echo
             exit 1
         else
-            #echo -ne "${GN}${SCRIPT_NAME}${NL}: "
-            echo -e "${BD}Repositorio destino${NL} (Working directory)"
-            echo -e "    ${DEST_REPO}"
-            echo
+            mssg "    ${DEST_REPO}"
             if [[ ! -n ${ORIG_PACKAGES} ]] && [[ ! -d ${ORIG_PACKAGES} ]]; then
-                echo -ne "${WARNING} "
-                echo -ne "Directorio origen de los paquetes es incorrecto "
+                mssg_error "Directorio origen de los paquetes es incorrecto."
                 echo
                 exit 1 
             fi
         fi
     fi
+    echo
     return 0
 }
 
@@ -161,22 +193,24 @@ function remove_packages()
     local package_list=$(reprepro -A ${arch} --list-format  '${package} ' list ${codename})
     local package_from_repo
     
-    echo -e "${BD}Eliminando${NL} paquetes no referenciados en:"
-    echo -e "    ${ORIG_PACKAGES}/${codename}\n"
+    mssg "${BD}Eliminando${NL} paquetes no referenciados en:\n \
+          ${ORIG_PACKAGES}/${codename}\n"
+    echo
+    mssg "Checking..."
     for package in ${package_list}  ; do # Itera la lista de "Nombres" de paquetes
         PKG_DEB=$( reprepro -A ${arch} --list-format '${package}_${version}_${architecture}.deb\n' \
                 listmatched ${codename} "${package}" | sed -e "s/[0-9]://" ) 
         
         if [[ ! -e "${ORIG_PACKAGES}/${codename}/${PKG_DEB}" ]] ; then 
-            echo -e "${BD}${RD}Eliminando del repositorio...${NL}"
-            echo -e "${BD}${RD}    ...${PKG_DEB}${NL}"
+            mssg "${BD}${RD}Eliminando del repositorio...${NL}\n\
+                     ${BD}${RD}    ${PKG_DEB}${NL}"
             reprepro remove ${codename} ${package} > /dev/null
         else
-            echo -e "    ${PKG_DEB}"
+            mssg "    ${PKG_DEB}"
         fi
     done
     echo
-    echo
+    return 0
 }
 
 
@@ -184,8 +218,11 @@ function add_packages()
 {
     local codename=${1}
     local command_output
-    echo -e "${BD}Añadiendo${NL} paquetes para ${BD}\"${codename}\"${NL} desde:"
-    echo -e "    ${ORIG_PACKAGES}/${codename}\n"
+    
+    mssg "${BD}Añadiendo${NL} paquetes para ${BD}\"${codename}\"${NL} desde:\n\
+             ${ORIG_PACKAGES}/${codename}\n"
+    echo
+    mssg "Checking..."
     for DEB in ${ORIG_PACKAGES}/${codename}/*.deb ; do 
         DEB=$(echo ${DEB} | sed -e "s/[0-9]://")
         ## Si no funciona añadir  --ask-passphrase
@@ -194,14 +231,14 @@ function add_packages()
             || reprepro -V -A amd64 -S utils -P optional --ask-passphrase \
             -b . includedeb ${codename} ${DEB} 2> /dev/null)
         if [[ $(echo -e "${command_output}") =~ Created ]]; then
-            echo -e "${GN}Añadiendo...${NL}"
-            echo -e "    ${GN}$(basename ${DEB})${NL}"
+            mssg "${GN}Añadiendo...${NL}
+                  ${GN}$(basename ${DEB})${NL}"
         else 
-            echo -e "    $(basename ${DEB})"
+            mssg "    $(basename ${DEB})"
         fi
     done
     echo
-    echo
+    return 0
 }
 
 
@@ -210,13 +247,12 @@ function update_repository()
     local input_read
     declare -a suitables
     
-    cd ${DEST_REPO}
+    cd ${DEST_REPO} ## Changing working directory ##
 
-    [[ $PWD = $DEST_REPO ]] && create_distributions_file "distributions"
+    [[ $PWD = $DEST_REPO ]] && edit_distributions_file "distributions"
     
     if [[ ! -e ${PWD}/conf/distributions ]] ; then
-        echo -ne "${WARNING} "
-        echo -e "El archivo ${BD}distributions${NL} no existe"
+        mssg_error "El directorio de destino no existe"
         echo
         exit 1
     else
@@ -226,79 +262,92 @@ function update_repository()
 
     if [[ -n ${suitables} ]]; then
         for codename in ${suitables[@]} ; do
-            echo $codename
             if [[ ! -d "${ORIG_PACKAGES}" ]] ; then
-                echo -e "${WARNING} No existe el directorio origen"
-                echo -e "    ${ORIG_PACKAGES}"
+                mssg_error "No existe el directorio origen\n\
+                            ${ORIG_PACKAGES}"
+                echo
                 exit 1
             elif [[ ! -d "${ORIG_PACKAGES}/${codename}" ]] ; then
-                echo -ne "${WARNING} "
-                echo -e "No existe el directorio con la version de paquetes"
-                echo -e "    ${ORIG_PACKAGES}/${codename}"
+                mssg_error "No existe el directorio origen\n\
+                        con la version de paquetes ${BD}'${codename}'${NL}"
                 echo
                 exit 1
             else
-                echo
-                #echo -ne "${BD}${GN}${SCRIPT_NAME}${WHITE}: "
-                echo -e "${BD}Actualizando repositorio para \"${codename}\"${NL}"
-                echo -ne "${GN}${SCRIPT_NAME}${NL}: "
-                echo -e "Quieres actualizar el repositorio? [y/N]:"
-                read -sn1 input_read
-                #echo
+                mssg "${BD}Actualizando repositorio${NL} para ${BD}\"${codename}\"${NL}"
+                mssg_ask "${GN}${SCRIPT_NAME}${NL}: Quieres actualizar el repositorio? [y/N]:"
+                read -sn1 input_read && echo
                 if [[ "${input_read}" =~ ^[YySs]$ ]] ; then
                     # Ejecuta la funcion de eliminar paquetes
                     remove_packages ${codename}
                     # Ejecuta la funcion de inclusion de paquetes
                     add_packages ${codename}
                 else
-                    echo -e "${GN}${SCRIPT_NAME}${NL}: Exiting"
+                    echo
+                    mssg_exit && return 1
                 fi
             fi
         done
     else
-        echo
-        echo -e "${WARNING} No hay versiones el archivo conf/distributions"
+        mssg_error "No hay versiones el archivo conf/distributions"
         echo
         exit 1
     fi
+    echo
     return 0
 }
 
 
 function create_mountpoint()
 {
-    if [[ ! -d ${MOUNTPOINT}${REMOTE_HOST} ]]; then
-        mkdir -p ${MOUNTPOINT}${REMOTE_HOST}
+    local remote
+    
+    remote=$(findmnt -t fuse.sshfs | grep "${MOUNTPOINT}" | cut -d " " -f 2)
+    mssg "${BD}Creando punto de montaje${NL}"
+    if [[ ! -d ${MOUNTPOINT}${REMOTE_HOST} ]] ; then
+        mkdir -p ${MOUNTPOINT}${REMOTE_HOST} \
+                && mssg "    ${GN}Creando:${NL}${MOUNTPOINT}${REMOTE_HOST}" \
+                || mssg_error "No se ha podido crear el punto de montaje."
+    else
+        
+        mssg "     ${GN}Ya exite:${NL} ${MOUNTPOINT}${REMOTE_HOST}"
+        if [[ -n "${remote}" ]] ; then
+            if [[ "${remote}" = "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_DESTINATION}" ]]  ; then
+                mssg "    con ${remote} ya montado."
+            else
+                mssg_error "    '${MOUNTPOINT}${REMOTE_HOST}' esta montado pero con otro destino."
+                echo
+                exit 1
+            fi
+        fi
     fi
-}
-
-
-function error_mounting_remote()
-{
-    echo -ne "${WARNING} "
-    echo -e "No se ha podido montar el host ${BD}${REMOTE_HOST}${NL}"
-    exit 0
+    echo
+    return 0
 }
 
 
 function mount_remote()
 {
     local stat
-    create_mountpoint
+    
     mountpoint ${MOUNTPOINT}${REMOTE_HOST} > /dev/null
     stat="$?"
-    echo -e "${BD}Repostorio remoto"
-    echo -e "    ${BD}${REMOTE_DESTINATION}${NL} en ${BD}${REMOTE_HOST}${NL}:${REMOTE_PORT}"
+    mssg "${BD}Repositorio remoto"
+    
+    [[ -n "${IDENTITY}" ]] && IDENTITY=",identityfile=${IDENTITY}"
+    mssg "    ${BD}${REMOTE_HOST}:${NL}${BD}${REMOTE_DESTINATION}${NL} puerto ${BD}${REMOTE_PORT}${NL}"
     if [[ "${stat}" != "0" && -d ${MOUNTPOINT}${REMOTE_HOST} ]] ; then
-        echo -e "    ${BD}Montando en:${NL} ${MOUNTPOINT}${REMOTE_HOST}"
+        mssg "    ${BD}Montando en:${NL}${MOUNTPOINT}${REMOTE_HOST}"
         sshfs ${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_DESTINATION} \
-            ${MOUNTPOINT}${REMOTE_HOST} -o port=${REMOTE_PORT} \
-            || error_mounting_remote
+            ${MOUNTPOINT}${REMOTE_HOST} -o port=${REMOTE_PORT}${IDENTITY} 
     fi
     mountpoint ${MOUNTPOINT}${REMOTE_HOST} > /dev/null
     stat="$?"
     if [[ "${stat}" = "0" && -d ${MOUNTPOINT}${REMOTE_HOST} ]] ; then
-        echo -e "    ${GN}${BD}Accesible en:${NL} ${MOUNTPOINT}${REMOTE_HOST}"
+        mssg "    ${GN}Accesible en:${NL} ${MOUNTPOINT}${REMOTE_HOST}"
+    else
+        mssg_error "No se ha podido montar el host ${BD}${REMOTE_HOST}${NL}"
+        echo
+        exit 1
     fi
     echo
     return 0
@@ -307,66 +356,89 @@ function mount_remote()
 
 function umount_remote()
 {
-    local mounted=$(ls -d -1 ${MOUNTPOINT}*)
-    mountpoint "$mounted" > /dev/null
+    local remote
+    local mounted=$(ls -d -1 ${MOUNTPOINT}* 2> /dev/null)
+
+    mountpoint "$mounted" &> /dev/null
     stat="$?"
-    if [[ "${stat}" = "0" ]] ; then
-        echo -e "${BD}Repostorio remoto"
-        echo -e "    ${BD}${RD}${BD}Desmontando:${NL} ${mounted}"
-        umount "${mounted}" &&  rm "${mounted}"
+    if [[ -n "${mounted}" ]] ; then
+        if [[ "${stat}" = "0" ]] ; then
+            remote=$(findmnt -t fuse.sshfs | grep "${MOUNTPOINT}" | cut -d " " -f 2)
+            mssg "${BD}Repostorio remoto${NL}\n\
+                  Desmontando: ${remote}\n\
+                  de ${mounted}"
+                  
+            umount "${mounted}" &&  rm -fR "${mounted}"
+        else
+            mssg_error "No hay nada montado en\n\
+                        $mounted"
+            mssg "    ${BD}Eliminando...${NL}"
+            echo
+            exit 1
+        fi
+    else
+        mssg_error "No existe ningun directorio como punto de montaje"
+        echo
+        exit 1
     fi
+    mssg_exit
     echo
-    echo -e "${GN}${SCRIPT_NAME}${NL}: Exiting"
-    echo
-    return 0 
+    return 0
 }
 
 
-
-function create_distributions_file()
+function edit_distributions_file()
 {
+    local input_read=""
     local file=${1}
-    local select="y/N"
-    local input_read
-    if [[ ! -d  ${PWD}/conf ]]; then
-        echo -e "Creando directorio ${BD}${PWD}/conf${NL} "
-        mkdir -p ${PWD}/conf
-    fi
     
-    if [[ ! -f ${PWD}/conf/${file} ]]; then
-        touch ${PWD}/conf/${file}
-        select="Y/n"
-        echo -e "Creando archivo ${BD}${PWD}/conf/${file}${NL}"
-        sleep 0.2
-        OLD_IFS=$IFS
-        IFS=$'\n'
-        for ln in ${DISTRIBUTIONS_TEXT}; do
-            echo -e $ln >> ${PWD}/conf/${file}
-        done
-        IFS=$OLD_IFS
-    else
-        echo -e "El archivo ${BD}${file}${NL} existe."
+    mssg "${BD}Editar archivo${NL}\n"
+    if [[ ! -e ./conf/${file} ]] ; then
+        mssg_error "El archivo ${BD}${DEST_REPO}/conf/${file}${NL} no existe."
+        mssg_ask "${GN}${SCRIPT_NAME}${NL}: Quieres crearlo? [y/N]:"
+        read -sn1 input_read && echo
+        if [[ "${input_read}" =~ ^[YySs]$ ]] ; then
+            mkdir -p ${DEST_REPO}/conf \
+                    && touch ${PWD}/conf/${file} \
+                    || (mssg_error "" && exit 0)
+            mssg "Creando archivo ${BD}${PWD}/conf/${file}${NL}"
+            sleep 0.2
+            OLD_IFS=$IFS
+            IFS=$'\n'
+            for ln in ${DISTRIBUTIONS_TEXT}; do
+                echo -e $ln >> ${PWD}/conf/${file}
+            done
+            IFS=$OLD_IFS
+        else
+            mssg_exit
+            exit 0
+        fi
     fi
-    echo -ne "${GN}${SCRIPT_NAME}${NL}: Quieres editar ${BD}./conf/${file}${NL}? ${select}:"
-    read -sn1 input_read
-    #echo
-    if [[ "${input_read}" =~ ^[YySs]$ && "$select" = "y/N" ]] || [[ ! "${input_read}" =~ ^[Nn]$ && "$select" = "Y/n" ]] ; then
+    mssg_ask "${GN}${SCRIPT_NAME}${NL}: Quieres editar ${BD}${file}${NL}? [y/N]:"
+    read -sn1 input_read && echo
+    if [[ "${input_read}" =~ ^[YySs]$ ]]  ; then
         nano ./conf/${file}
     fi
+    echo
+    return 0
 }
 
 
 function save_lats_options()
 {
+    mssg "${BD}Guardado opciones y argumentos${NL}\n\
+          ${LAST_OPTIONS}"
     echo -e "${LAST_OPTIONS}" >> "${HOME}${OPTS_SAVED_FILE}"
     sed -i "/^ *$/d"  "${HOME}${OPTS_SAVED_FILE}"  ##  Elimina lineas vacias
     cat "${HOME}${OPTS_SAVED_FILE}" | sort | uniq > "/tmp/repositoricerrc.tmp"
     [[ -f "/tmp/repositoricerrc.tmp" ]] \
             && cp "/tmp/repositoricerrc.tmp" "${HOME}${OPTS_SAVED_FILE}" \
             && rm "/tmp/repositoricerrc.tmp"
-
     #sed -i '$!N; /^\(.*\)\n\1$/!P; D' "${HOME}${OPTS_SAVED_FILE}" ##  Elimina lineas duplicadas contiguas
-    [[ $(cat "${HOME}${OPTS_SAVED_FILE}" | wc -l) -gt ${MAX_SAVED} ]] && sed -i -e "1d"  "${HOME}${OPTS_SAVED_FILE}"  
+    [[ $(cat "${HOME}${OPTS_SAVED_FILE}" | wc -l) -gt ${MAX_SAVED} ]] \
+                                  && sed -i -e "1d"  "${HOME}${OPTS_SAVED_FILE}"  
+    echo
+    return 0
 }
 
 
@@ -374,40 +446,41 @@ function get_last_options()
 {
     local input_read
     local n=0
-    echo -e "${BD}Ultimas argumentos y opciones usados:${NL}"
+    
+    mssg "${BD}Ultimas opciones y argumentos usados:${NL}"
     cat "${HOME}${OPTS_SAVED_FILE}" | while read -r line ; do
         n=$(($n + 1))
-        echo "$n)  $line"
+        mssg " ${BD}${n})${NL} $line"
     done
-    echo -e "*)  Ninguna"
-    echo -ne "${GN}${SCRIPT_NAME}${NL}: Selecciona una opcion:"
-    read -sn1 input_read
-    #echo
+    mssg " ${BD}*)${NL} Ninguna"
+    mssg_ask "${GN}${SCRIPT_NAME}${NL}: Selecciona una opcion: "
+    read -sn1 input_read && echo
     if [[ ${input_read} =~ ^[1-5] ]] ; then
         OPTIONS=$(sed "${input_read}q;d" "${HOME}${OPTS_SAVED_FILE}")
     else
-        echo
-        echo -e "${GN}${SCRIPT_NAME}${NL}: Exiting"
-        echo
-        exit 0
+        mssg_exit && exit 0
     fi
+    echo
+    return 0
 }
 
 
 function help_message()
 {
-    echo -e "repositorizer /path/origen"
     ( cat <<EOF
-Description: ${SCRIPT_NAME} builds a .deb package from sources.
+Description: ${SCRIPT_NAME} updates personal repository.
 
 Usage:
-  ${SCRIPT_NAME} -h
-  ${SCRIPT_NAME}   [-s <SOURCE_PACKAGES>] [-c] <REPOSITORY_ORIGEN>
+  ${SCRIPT_NAME} [-hlu]
+  ${SCRIPT_NAME} -p <SOURCE_PACKAGES> [-r <USER@HOST>] [-i <FILE>] <REPOSITORY_FOLDER>
   
   Options:
     -h  Shows this message.
-    -s  <SOURCE_PACKAGES> Set source packages.
-    -l  Shows for choice the last 5 sets of passed arguments
+    -l  Shows for choice the last 5 sets of passed arguments.
+    -u  Umount sshfs remote file system.
+    -p  <SOURCE_PACKAGES> Set source packages. (mandatory)
+    -r  <USER@HOST.domain>[:PORT]
+    
   
   <SOURCE_PACKAGES>
     Directory that contains a folder for each "codename" with
@@ -423,13 +496,16 @@ EOF
 }
 
 
-OPTIONS=$(getopt  -o "hlup:r:" -n "${SCRIPT_NAME}" -- "$@")
+OPTIONS=$(getopt  -o "hlup:r:i:" -n "${SCRIPT_NAME}" -- "$@")
 
 [ $? != 0 ] && exit 1 
 
-#LAST_OPTIONS=${OPTIONS}
-
 eval set -- "$OPTIONS"
+
+echo
+echo -e "${BD}#######  repositorizer  #################${NL}"
+echo
+
 
 while true ; do 
     case $1 in 
@@ -444,12 +520,12 @@ while true ; do
                 shift
                 get_last_options
                 eval set -- "$OPTIONS"
-                echo
+                
                 ;;
             -p)
                 ## Packages origen argumennt
                 OPT_P="${1}"
-                shift
+                shift&& 
                 if [[ ! ${1} =~ ^-. ]] && [[ ${1} =~ ^[a-zA-Z0-9/]+ ]]; then
                     OPT_ORIGEN="${1}"
                     OPT_P="${OPT_P} '${1}'"
@@ -466,6 +542,15 @@ while true ; do
                     shift
                 fi
                 ;;
+            -i)
+                OPT_I="${1}"
+                shift
+                if [[ ! ${1} =~ ^-. ]] ; then
+                    OPT_IDENTITY=${1}
+                    OPT_I="${OPT_I} '${1}'"
+                    shift
+                fi
+                ;;
             -u)
                 shift
                 OPT_UMOUNT="y"
@@ -477,21 +562,30 @@ while true ; do
                 
                 [[ -n ${OPT_REMOTE} ]] && validate_remote ${OPT_REMOTE}
                 
-                validate_origen_packages ${OPT_ORIGEN} && 
-                [[ -n ${1} ]] && OPT_DESTINATION=${1}
+                [[ -n ${OPT_IDENTITY} && -n ${OPT_REMOTE} ]] && validate_identity ${OPT_IDENTITY}
+                
+                validate_origen_packages ${OPT_ORIGEN}
+                
+                OPT_DESTINATION=${1}
                 shift
                 
                 if [[ -n ${REMOTE_HOST} ]]; then
                     REMOTE_DESTINATION=${OPT_DESTINATION}
-                    create_mountpoint
-                    validate_destination_repositori ${MOUNTPOINT}${REMOTE_HOST}
-                    mount_remote
+                    if [[ ${REMOTE_DESTINATION} ]] ; then
+                        create_mountpoint
+                        validate_destination_repositori ${MOUNTPOINT}${REMOTE_HOST}
+                        mount_remote 
+                    else
+                        mssg_error "Es necesaria una ruta del host remoto." && exit 0
+                    fi
                 else
                     validate_destination_repositori ${OPT_DESTINATION}
-                fi
-                LAST_OPTIONS="${OPT_P} ${OPT_R} -- '${OPT_DESTINATION}'"
-                
-                update_repository && [[ ${SAVELAST} = "" ]] && save_lats_options
+                fi \
+                && LAST_OPTIONS="${OPT_P} ${OPT_R} ${OPT_I} -- '${OPT_DESTINATION}'" \
+                && update_repository \
+                && [[ ${SAVELAST} = "" ]] \
+                && save_lats_options \
+                && mssg_exit
                 break
                 ;;
             *)
