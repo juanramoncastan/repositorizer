@@ -2,13 +2,13 @@
 
 
 # repositorizer
-# Version: 2.2
+# Version: 2.4
 # Author: monon
 
 
 ## Script output format variables
 SCRIPT_NAME=$(basename $0)
-[[ -e ${HOME}/.bash_colors ]] && source ${HOME}/.bash_colors
+[[ -e ${HOME}/.bash_functions ]] && source ${HOME}/.bash_functions
 BD=${BOLD}
 NL=${NORMAL}
 RD=${RED}
@@ -80,10 +80,10 @@ function validate_remote()
     local host
     local port
 
-    pattern="^[[[:alnum:]_-]+@[[:alnum:]_-]+\.[[:alnum:]_-]+[0-9:]*$"
+    pattern="^[[[:alnum:]_-]+@[[:alnum:][:punct:]_-]+\.[[:alnum:]_-]+[0-9:]*$"
     if [[ ! ${1} =~ ^-. ]] && [[ ${1} =~ ${pattern}$ ]]; then
-        user=$(echo ${1} | sed -e "s|\(^[[:alnum:]_-]\+\)@.\+$|\1|")
-        host=$(echo ${1} | sed -e "s|^.\+@\([[:alnum:]_-]\+\.[[:alnum:]_-]\+\)[:][[:digit:]]*|\1|")
+        user=$(echo ${1} | sed -e "s|\(^[[:alnum:][:punct:]_-]\+\)@.\+$|\1|")
+        host=$(echo ${1} | sed -e "s|^.*@\([[:alnum:]_-]\+\.[[:alnum:][:punct:]_-]\+\)[:][[:digit:]]*|\1|")
         port=$(echo ${1} | sed -e "/.\+:.\+/!d" -e "s|^.\+:\([[:digit:]]*$\)|\1|g")
         [[ -z $port ]] && port="22"
         REMOTE_USER="${user}"
@@ -93,7 +93,7 @@ function validate_remote()
               ${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PORT}"
     else
         mssg_error "El host remoto ${BD}${1}${NL} està mal formado\n\
-                    Formato: ${BD}user@host.domain:[port]${NL}"
+                    Formato: ${BD}user@host.domain[:port]${NL}"
         echo
         exit 1
     fi
