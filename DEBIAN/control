@@ -1,0 +1,8 @@
+Package: repositorizer
+Version: 2.4
+Section: devel
+Priority: optional
+Architecture: all
+Depends: reprepro
+Maintainer: Juan Ramon Castan
+Description: Tool to update local repositories with reprepro

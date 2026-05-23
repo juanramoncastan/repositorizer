@@ -17,10 +17,9 @@
 
 # ###########  repositorizer Makefile  ###########################
 # Version: 2.4
+# BUILD = "../package-name_version_architecture" given from "debianizador" app
 
-
-
-#####  BUILD = "../package-name_version_architecture" given from "debianizador" script
+BUILD = ""
 PROJECT=repositorizer
 PREFIX = /usr
 BIN_PATH = /bin
