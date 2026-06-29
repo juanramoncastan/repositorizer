@@ -11,8 +11,8 @@ SCRIPT_NAME=$(basename $0)
 [[ -e ${HOME}/.bash_functions ]] && source ${HOME}/.bash_functions
 BD=${BOLD}
 NL=${NORMAL}
-RD=${RED}
-GN=${GREEN}
+RD=${FG_RED}
+GN=${FG_GREEN}
 WARNING="${BD}${RD}Warning!${NL}:"
 
 ## Global Variables 
@@ -248,8 +248,8 @@ function add_packages()
             exit 1
         fi
         if [[ $(echo -e "${command_output}") =~ Created ]]; then
-            mssg "${GN}Añadiendo...${NL}
-                  ${GN}$(basename ${DEB})${NL}"
+            mssg "${BD}${GN}Añadiendo...${NL}
+                  ${BD}${GN}    $(basename ${DEB})${NL}"
         else 
             mssg "    $(basename ${DEB})"
         fi
@@ -291,7 +291,7 @@ function update_repository()
                 exit 1
             else
                 mssg "${BD}Actualizando${NL} repositorio para ${BD}\"${codename}\"${NL}"
-                mssg_ask "${GN}${SCRIPT_NAME}${NL}: Quieres actualizar el repositorio? ${BD}[y/N]${NL}:"
+                mssg_ask "${GN}${SCRIPT_NAME}${NL}: Quieres ${BD}actualizar${NL} el repositorio? ${BD}[y/N]${NL}:"
                 read -sn1 input_read
                 echo
                 if [[ "${input_read}" =~ ^[YySs]$ ]] ; then
